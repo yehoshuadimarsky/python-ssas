@@ -23,3 +23,23 @@ Using these ingredients, I created my `ssas_api.py` module with some utilities t
 **Note:** I've only been using Azure Analysis Services, so the code is designed for that regarding the URL of the server and authentication string.
 
 I haven't found anything like this online, so feel free to use it.
+
+## Quickstart
+```
+In [1]: import ssas_api
+   ...: 
+   ...: conn = ssas_api.set_conn_string(
+   ...:     ssas_server='<YOUR_SERVER>',
+   ...:     db_name='<YOUR_DATABASE>',
+   ...:     username='<USERNAME>',
+   ...:     password='<PASSWORD>'
+   ...: )
+
+In [2]: dax_string = '''
+   ...: //any valid DAX query
+   ...: EVALUATE
+   ...: CALCULATETABLE(MyTable)
+   ...: '''
+
+In [3]: df = ssas_api.get_DAX(connection_string=conn, dax_string=dax_string)
+```
