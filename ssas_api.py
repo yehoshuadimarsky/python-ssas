@@ -8,8 +8,10 @@ Created on Wed Sep 20 16:59:43 2017
 import pandas as pd
 import numpy as np
 
+from functools import wraps
 from pathlib import Path
 import logging
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +25,38 @@ except ImportError:
     raise ImportError(msg)
 
 
-def _load_assemblies():
+def _load_assemblies(amo_path=None, adomd_path=None):
     """
     Loads required assemblies, called after function definition.
     Might need to install SSAS client libraries:
     https://docs.microsoft.com/en-us/azure/analysis-services/analysis-services-data-providers
+
+    Parameters
+    ----------
+    amo_path : str, default None
+        The full path to the DLL file of the assembly for AMO. 
+        Should end with '**Microsoft.AnalysisServices.Tabular.dll**'
+        Example: C:/my/path/to/Microsoft.AnalysisServices.Tabular.dll
+        If None, will use the default location on Windows.
+    adomd_path : str, default None
+        The full path to the DLL file of the assembly for ADOMD. 
+        Should end with '**Microsoft.AnalysisServices.AdomdClient.dll**'
+        Example: C:/my/path/to/Microsoft.AnalysisServices.AdomdClient.dll
+        If None, will use the default location on Windows.
     """
     # Full path of .dll files
     root = Path(r"C:\Windows\Microsoft.NET\assembly\GAC_MSIL")
     # get latest version of libraries if multiple libraries are installed (max func)
-    amo_path = str(
-        max((root / "Microsoft.AnalysisServices.Tabular").iterdir())
-        / "Microsoft.AnalysisServices.Tabular.dll"
-    )
-    adomd_path = str(
-        max((root / "Microsoft.AnalysisServices.AdomdClient").iterdir())
-        / "Microsoft.AnalysisServices.AdomdClient.dll"
-    )
+    if amo_path is None:
+        amo_path = str(
+            max((root / "Microsoft.AnalysisServices.Tabular").iterdir())
+            / "Microsoft.AnalysisServices.Tabular.dll"
+        )
+    if adomd_path is None:
+        adomd_path = str(
+            max((root / "Microsoft.AnalysisServices.AdomdClient").iterdir())
+            / "Microsoft.AnalysisServices.AdomdClient.dll"
+        )
 
     # load .Net assemblies
     logger.info("Loading .Net assemblies...")
@@ -61,9 +78,37 @@ def _load_assemblies():
         logger.info(a.split(",")[0])
 
 
-_load_assemblies()
+def _assert_dotnet_loaded(func):
+    """
+    Wrapper to make sure that required .NET assemblies have been loaded and imported.
+    Can pass the keyword arguments 'amo_path' and 'adomd_path' to any annotated function,
+    it will use them in the `_load_assemblies` function.
+
+    Example: 
+        .. code-block:: python
+        
+            import ssas_api
+            conn = ssas_api.set_conn_string(
+                's', 'd', 'u', 'p', 
+                amo_path='C:/path/number/one', 
+                adomd_path='C:/path/number/two'
+            )
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        amo_path = kwargs.pop("amo_path", None)
+        adomd_path = kwargs.pop("adomd_path", None)
+        try:
+            type(DataTable)
+        except NameError:
+            # .NET assemblies not loaded/imported
+            logger.warning(".Net assemblies not loaded and imported, doing so now...")
+            _load_assemblies(amo_path=amo_path, adomd_path=adomd_path)
+        return func(*args, **kwargs)
+    return wrapper
 
 
+@_assert_dotnet_loaded
 def set_conn_string(server, db_name, username, password):
     """
     Sets connection string to SSAS database, 
@@ -78,6 +123,7 @@ def set_conn_string(server, db_name, username, password):
     return conn_string
 
 
+@_assert_dotnet_loaded
 def get_DAX(connection_string, dax_string):
     """
     Executes DAX query and returns the results as a pandas DataFrame
@@ -98,7 +144,7 @@ def get_DAX(connection_string, dax_string):
     return df
 
 
-def _get_DAX(connection_string, dax_string) -> DataTable:
+def _get_DAX(connection_string, dax_string) -> "DataTable":
     dataadapter = ADOMD.AdomdDataAdapter(dax_string, connection_string)
     table = DataTable()
     logger.info("Getting DAX query...")
@@ -107,7 +153,7 @@ def _get_DAX(connection_string, dax_string) -> DataTable:
     return table
 
 
-def _parse_DAX_result(table: DataTable) -> pd.DataFrame:
+def _parse_DAX_result(table: "DataTable") -> pd.DataFrame:
     cols = [c for c in table.Columns.List]
     rows = []
     # much better performance to just access data by position instead of name
@@ -134,11 +180,19 @@ def _parse_DAX_result(table: DataTable) -> pd.DataFrame:
     # convert other types
     types_map = {"System.Int64": int, "System.Double": float, "System.String": str}
     col_types = {c.ColumnName: types_map.get(c.DataType.FullName, "object") for c in cols}
+    
+    # handle NaNs (which are floats, as of pandas v.0.25.3) in int columns
+    col_types_ints = {k for k,v in col_types.items() if v == int}
+    ser = df.isna().any(axis=0)
+    col_types.update({k:float for k in set(ser[ser].index).intersection(col_types_ints)})
+    
+    # convert
     df = df.astype(col_types)
 
     return df
 
 
+@_assert_dotnet_loaded
 def process_database(connection_string, refresh_type, db_name):
     process_model(
         connection_string=connection_string,
@@ -148,6 +202,7 @@ def process_database(connection_string, refresh_type, db_name):
     )
 
 
+@_assert_dotnet_loaded
 def process_table(connection_string, table_name, refresh_type, db_name):
     process_model(
         connection_string=connection_string,
@@ -158,6 +213,7 @@ def process_table(connection_string, table_name, refresh_type, db_name):
     )
 
 
+@_assert_dotnet_loaded
 def process_model(connection_string, db_name, refresh_type="full", item_type="model", item=None):
     """
     Processes SSAS data model to get new data from underlying source.
