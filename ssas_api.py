@@ -62,14 +62,15 @@ def _load_assemblies(amo_path=None, adomd_path=None):
     logger.info("Loading .Net assemblies...")
     clr.AddReference("System")
     clr.AddReference("System.Data")
-    clr.AddReference(amo_path)
-    clr.AddReference(adomd_path)
 
-    # Only after loaded .Net assemblies
     global System, DataTable, AMO, ADOMD
 
     import System
     from System.Data import DataTable
+    from System.Reflection import Assembly
+    Assembly.LoadFrom(amo_path)
+    Assembly.LoadFrom(adomd_path)
+
     import Microsoft.AnalysisServices.Tabular as AMO
     import Microsoft.AnalysisServices.AdomdClient as ADOMD
 
@@ -174,18 +175,18 @@ def _parse_DAX_result(table: "DataTable") -> pd.DataFrame:
         for dtt in dt_types:
             # if all nulls, then pd.to_datetime will fail
             if not df.loc[:, dtt].isna().all():
-                ser = df.loc[:, dtt].map(lambda x: x.ToString('s'))
+                ser = df.loc[:, dtt].map(lambda x: x.ToString())
                 df.loc[:, dtt] = pd.to_datetime(ser)
 
     # convert other types
     types_map = {"System.Int64": int, "System.Double": float, "System.String": str}
     col_types = {c.ColumnName: types_map.get(c.DataType.FullName, "object") for c in cols}
-    
+
     # handle NaNs (which are floats, as of pandas v.0.25.3) in int columns
     col_types_ints = {k for k,v in col_types.items() if v == int}
     ser = df.isna().any(axis=0)
     col_types.update({k:float for k in set(ser[ser].index).intersection(col_types_ints)})
-    
+
     # convert
     df = df.astype(col_types)
 
