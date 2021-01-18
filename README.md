@@ -54,11 +54,11 @@ ADOMD_PATH = f"{base}.AdomdClient.retail.amd64.{_version}/lib/net45/Microsoft.An
 ```
 
 ## Quickstart
-```
+```ipython
 In [1]: import ssas_api
    ...: 
    ...: conn = ssas_api.set_conn_string(
-   ...:     ssas_server='<YOUR_SERVER>',
+   ...:     server='<YOUR_SERVER>',
    ...:     db_name='<YOUR_DATABASE>',
    ...:     username='<USERNAME>',
    ...:     password='<PASSWORD>'
