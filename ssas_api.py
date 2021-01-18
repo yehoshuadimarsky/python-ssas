@@ -174,7 +174,8 @@ def _parse_DAX_result(table: "DataTable") -> pd.DataFrame:
         for dtt in dt_types:
             # if all nulls, then pd.to_datetime will fail
             if not df.loc[:, dtt].isna().all():
-                ser = df.loc[:, dtt].map(lambda x: x.ToString())
+                # https://docs.microsoft.com/en-us/dotnet/standard/base-types/standard-date-and-time-format-strings#Sortable
+                ser = df.loc[:, dtt].map(lambda x: x.ToString('s'))
                 df.loc[:, dtt] = pd.to_datetime(ser)
 
     # convert other types
